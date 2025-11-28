@@ -62,7 +62,10 @@ class EqualWeightPortfolio:
         """
         TODO: Complete Task 1 Below
         """
-
+        equal_weight = 1 / len(assets)  # 每個資產的權重
+        # 對每一天都填入相同的等權重
+        for col in assets:
+            self.portfolio_weights[col] = equal_weight
         """
         TODO: Complete Task 1 Above
         """
@@ -113,8 +116,21 @@ class RiskParityPortfolio:
         """
         TODO: Complete Task 2 Below
         """
+        for i in range(self.lookback + 1, len(df)):
+            # 1. 取過去 lookback 天的報酬資料（不含第 i 天）
+            window_returns = df_returns.iloc[i - self.lookback : i][assets]
 
+            # 2. 計算每個資產在這個視窗的歷史波動度 σ_i
+            sigma = window_returns.std()
 
+            # 3. 風險的倒數（inverse volatility）
+            inv_vol = 1.0 / sigma
+
+            # 4. 正規化成權重：w_i = (1/σ_i) / Σ_j (1/σ_j)
+            weights = inv_vol / inv_vol.sum()
+
+            # 5. 把第 i 天的各資產權重寫進 DataFrame
+            self.portfolio_weights.loc[df.index[i], assets] = weights.values
 
         """
         TODO: Complete Task 2 Above
@@ -138,10 +154,12 @@ class RiskParityPortfolio:
         )
 
     def get_results(self):
+        
         # Ensure portfolio returns are calculated
         if not hasattr(self, "portfolio_returns"):
             self.calculate_portfolio_returns()
-
+        # print("\n=== DEBUG: portfolio_weights head ===")
+        # print(self.portfolio_weights.head(10))
         return self.portfolio_weights, self.portfolio_returns
 
 
@@ -190,8 +208,21 @@ class MeanVariancePortfolio:
 
                 # Sample Code: Initialize Decision w and the Objective
                 # NOTE: You can modify the following code
-                w = model.addMVar(n, name="w", ub=1)
-                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+                # w = model.addMVar(n, name="w", ub=1)
+                # model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+
+                # w 是 n 維向量，每個變數 0 ≤ w ≤ 1
+                w = model.addMVar(n, lb=0, ub=1, name="w")
+
+                # 設定目標：maximize w^T * mu - gamma/2 * w^T * Σ * w
+                # Gurobi 的 quad 表示 quadratic form
+                quad_risk = w @ Sigma @ w
+                expected_return = mu @ w
+
+                model.setObjective(expected_return - gamma * quad_risk / 2, gp.GRB.MAXIMIZE)
+
+                # 限制：sum(w) = 1
+                model.addConstr(w.sum() == 1, "budget")
 
                 """
                 TODO: Complete Task 3 Above
